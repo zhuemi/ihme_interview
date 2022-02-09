@@ -1,0 +1,201 @@
+---
+title: "Assignment3_Part 2 - Code Breaking"
+author: "Emily Zhu"
+date: "4/1/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library('tinytex')
+```
+
+```{r}
+english.letters <- c('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k',
+                     'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+                     'w', 'x', 'y', 'z')
+```
+
+```{r}
+apply.cipher.to.string <- function(string, cipher)
+{
+  output <- ''
+  
+  for (i in 1:nchar(string))
+  {
+    output <- paste(output, cipher[[substr(string, i, i)]], sep = '')
+  }
+  
+  return(output)
+}
+
+apply.cipher.to.text <- function(text, cipher)
+{
+  output <- c()
+  
+  for (string in text)
+  {
+    output <- c(output, apply.cipher.to.string(string, cipher))
+  }
+  
+  return(output)
+}
+
+```
+
+```{r}
+generate.random.cipher <- function()
+{
+  cipher <- list()
+  
+  inputs <- english.letters
+  outputs <- english.letters[sample(1:length(english.letters), 
+  length(english.letters))]
+  
+  for (index in 1:length(english.letters))
+  {
+    cipher[[inputs[index]]] <- outputs[index]
+  }
+  
+  return(cipher)
+}
+
+modify.cipher <- function(cipher, input, output)
+{
+  new.cipher <- cipher
+  new.cipher[[input]] <- output
+  old.output <- cipher[[input]]
+  collateral.input <- names(which(sapply(names(cipher), 
+                      function (key) {cipher[[key]]}) == output))
+  new.cipher[[collateral.input]] <- old.output
+  return(new.cipher)
+}
+
+propose.modified.cipher <- function(cipher)
+{
+  input <- sample(names(cipher), 1)
+  output <- sample(english.letters, 1)
+  return(modify.cipher(cipher, input, output))
+}
+```
+
+
+calculate the probability of one word
+```{r}
+one.gram.probability <- function(decrypted.string, lexical.database)
+{
+  string_split <- strsplit(decrypted.string, "")[[1]]
+  word.probability <- 0.0
+  
+  for (i in seq_along(string_split) - 1) {
+    if(length(string_split[i]) > 0) {
+      if(match(string_split[i+1],english.letters, nomatch = 0) != 0) {
+        word.probability <- word.probability + lexical.database[match(string_split[i],english.letters), match(string_split[i+1],english.letters)]
+      }
+    }
+    else { #applies to one-letter words. assign a very small probability close to 0, like with pairwise freq
+        word.probability <- word.probability + 0.1
+    }
+  }
+  return(word.probability)
+}
+```
+
+compute the log probability of the text
+```{r}
+log.probability.of.text <- function(text, cipher, lexical.database)
+{
+  log.probability.text <- 0.0
+
+  for (string in text)
+  {
+    decrypted.string <- apply.cipher.to.string(string, cipher)
+    log.probability.text <- log.probability.text + 
+    log(one.gram.probability(decrypted.string, lexical.database))
+  }
+  
+
+  return(log.probability.text)
+}
+```
+
+```{r}
+metropolis.step <- function(text, cipher, lexical.database = list())
+{
+  proposed.cipher <- propose.modified.cipher(cipher)
+  
+  lp1 <- log.probability
+  lp2 <- log.probability.of.text(text, proposed.cipher, lexical.database)
+    
+  if (lp2 > lp1)
+  {
+    return(proposed.cipher)
+  }
+  else
+  {
+    a <- exp(lp2 - lp1)
+    x <- runif(1)
+    if (x < a)
+    {
+      return(proposed.cipher)
+    }
+    else
+    {
+      return(cipher)
+    }
+  }
+}
+```
+
+```{r}
+encrypted.text <- tolower(unlist(strsplit(readLines("/Users/ezhu/pm520_repos/assignment3/assignment3-zhuemi/CodedMessage_Short.txt", n=1000), " "))) #need to make all characters lowercase to be able to parse properly.
+lexical.database <-read.table("/Users/ezhu/pm520_repos/assignment3/assignment3-zhuemi/LetterPairFreqFrom7Novels.txt")
+```
+
+```{r}
+set.seed(1)
+cipher <- generate.random.cipher()
+
+results <- data.frame()
+
+number.of.iterations <- 100
+
+for (iteration in 1:number.of.iterations)
+{ 
+  log.probability <- log.probability.of.text(encrypted.text, cipher, lexical.database)
+  current.decrypted.text <- paste(apply.cipher.to.text(encrypted.text, cipher), 
+                                  collapse = ' ')
+  results <- rbind(results,
+                   data.frame(Iteration = iteration,
+                              LogProbability = log.probability,
+                              CurrentDecryptedText = current.decrypted.text
+                              ))
+  cipher <- metropolis.step(encrypted.text, cipher, lexical.database)
+  
+
+}
+
+write.table(results, file = "", row.names = FALSE, sep = '\t')
+```
+
+For this part of the assignment, the Metropolis method is implemented as a way to decode messages. 
+Using the table of pairwise frequencies, we can calculate a score for each word by adding up all of the pairwise frequencies that occur, and ultimately doing so for the entire text.
+This is done so different decryption rules can be applied to the body of text and then compared to each other based on its score.
+
+The log of the text's score/probability is taken in order to prevent numeric instability that would occur from summing the raw probabilities.
+The instability occurs from finite precision arithmetic in floating point numbers.
+
+In order to prevent greedy optimization, the algorithm does not always accept the decryption rule on the basis of increasing the probability of the decrypted text. Even if the new proposed rule is not as "great" as the original, we will still accept the new rule regardless... sometimes.
+If the score of the new proposed rule is greater than that of the original, then we replace the old rule with the new rule. 
+If the score of the new proposed rule is greater than that of the original, the new rule will still replace the old rule prob(new rule) / prob(old rule) percent of the time. 
+
+Simulated annealing would probably yield better results by making the algorithm greedier the longer it runs by accepting non-greedy proposals less often. 
+
+Here is the output after 4654 iterations:
+"the first time i laid eyes on terry lennoq he was drunk in a rollsroyce silver wraith outside the terrace of the dancers the parking lot attendant had brought the car out and he was still holding the door open because terry lennoqs left foot was still dangling outside as if he had forgotten he had one he had a younglooking face but his hair was bone white you could tell by his eyes that he was plastered to the hairline but otherwise he looked like any other nice young guy in a dinner jacket who had been spending too much money in a joint that eqists for that purpose and for no other there was a girl beside him her hair was a lovely shade of dark red and she had a distant smile on her lips and over her shoulders she had a blue mink that almost made the rollsroyce look like just another automobile it didnt zuite nothing can the attendant was the usual halftough character in a white coat with the name of the restaurant stitched across the front of it in red he was getting fed up look mister he said with an edge to his voice would you mind a whole lot pulling your leg into the car so i can kind of shut the door or should i open it all the way so you can fall out the girl gave him a look which ought to have stuck at least four inches out of his back it didnt bother him enough to give him the shakes at the dancers they get the sort of people that disillusion you about what a lot of golfing money can do for the personality"
+
+The results may be better if more iterations were performed, but my computer probably can't handle too many without crashing. 
+
