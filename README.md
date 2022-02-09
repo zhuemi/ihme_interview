@@ -1,2 +1,2 @@
 # ihme_interview
- Code sample designed to break the coded message from the following:   * CodedMessage_Med.txt  It is an extract from a famous novel. It cannot break the code completely without resorting to manual ‘tweaks’ at the end, but you should be able to get to the point at which you can work out what the text is saying.
+ This code sample provided was originally as an assignment for a statistical computing course. It is designed to break the coded message by implementing the Metropolis method from the following:   * CodedMessage_Med.txt, an extract from a famous novel. It cannot break the code completely without resorting to manual ‘tweaks’ at the end, but you should be able to  work out what the text is saying.
